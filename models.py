@@ -16,6 +16,23 @@ import copy
 # print("Torchvision Version: ",torchvision.__version__)
 
 
+class ImageFolderWithPaths(datasets.ImageFolder):
+    """Custom dataset that includes image file paths. Extends
+    torchvision.datasets.ImageFolder
+    """
+
+    # override the __getitem__ method. this is the method that dataloader calls
+    def __getitem__(self, index):
+        # this is what ImageFolder normally returns 
+        original_tuple = super(ImageFolderWithPaths, self).__getitem__(index)
+        # the image file path
+        path = self.imgs[index][0]
+        # make a new tuple that includes original and the path
+        tuple_with_path = (original_tuple + (path,))
+        return tuple_with_path
+
+
+
 model_names = ['resnet', 'alexnet', 'vgg', 'squeezenet', 'densenet', 'inception']
 
 
@@ -68,7 +85,7 @@ def train_model(model_name, model, dataloaders, criterion, optimizer, num_epochs
             tp = 0
             tn = 0
             fp = 0
-            fn =0
+            fn = 0
             if phase == 'train':
                 model.train()  # Set model to training mode
             else:
@@ -78,13 +95,15 @@ def train_model(model_name, model, dataloaders, criterion, optimizer, num_epochs
             running_corrects = 0
 
             # Iterate over data.
-            for i,(inputs, labels) in enumerate(dataloaders[phase],0):
+            for inputs, labels, paths in dataloaders[phase]:
                 inputs = inputs.to(device)
                 labels = labels.to(device)
-
+                # paths = paths.to(device)
                 # zero the parameter gradients
                 optimizer.zero_grad()
 
+
+                # print(paths)
                 # forward
                 # track history if only in train
                 with torch.set_grad_enabled(phase == 'train'):
@@ -103,9 +122,8 @@ def train_model(model_name, model, dataloaders, criterion, optimizer, num_epochs
                         loss = criterion(outputs, labels)
 
                     _, preds = torch.max(outputs, 1)
-                    for j in range(2*i,2*i+len(preds)):
-                        sample_fname = dataloaders[phase].dataset.samples[j]
-                        f.write("{}, {}\n".format(sample_fname, preds[j-2*i]))
+                    for j in range(len(preds)):
+                        f.write("{}, {}\n".format(paths[i], preds[i]))
 
                     # backward + optimize only if in training phase
                     if phase == 'train':
@@ -129,6 +147,7 @@ def train_model(model_name, model, dataloaders, criterion, optimizer, num_epochs
                     if(a != b and a == torch.tensor([0])):
                         fn+=1
 
+            
             epoch_loss = running_loss / len(dataloaders[phase].dataset)
             epoch_acc = running_corrects.double() / len(dataloaders[phase].dataset)
 
@@ -143,7 +162,7 @@ def train_model(model_name, model, dataloaders, criterion, optimizer, num_epochs
                 best_model_wts = copy.deepcopy(model.state_dict())
             if phase == 'val':
                 val_acc_history.append(epoch_acc)
-
+        f.write("\n")
         print()
 
     time_elapsed = time.time() - since
@@ -153,9 +172,9 @@ def train_model(model_name, model, dataloaders, criterion, optimizer, num_epochs
     line = 'Best val Acc: {:4f}'.format(best_acc)
     file.write(line+'\n')
     print(line)
-    f.write("Fin\n\n")
-    f.close()
 
+    
+    f.close()
     # load best model weights
     model.load_state_dict(best_model_wts)
     return model, val_acc_history
@@ -298,7 +317,7 @@ for model_name in model_names:
 	print("Initializing Datasets and Dataloaders...")
 
 	# Create training and validation datasets
-	image_datasets = {x: datasets.ImageFolder(os.path.join(data_dir, x), data_transforms[x]) for x in ['train', 'val']}
+	image_datasets = {x: ImageFolderWithPaths(os.path.join(data_dir, x), data_transforms[x]) for x in ['train', 'val']}
 	# Create training and validation dataloaders
 	dataloaders_dict = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=batch_size, shuffle=True, num_workers=4) for x in ['train', 'val']}
 
